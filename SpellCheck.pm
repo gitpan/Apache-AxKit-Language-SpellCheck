@@ -1,10 +1,11 @@
-# $Id: SpellCheck.pm,v 1.3 2005/01/20 18:22:54 nachbaur Exp $
+# $Id: SpellCheck.pm,v 1.5 2005/01/27 00:45:38 nachbaur Exp $
 
 package Apache::AxKit::Language::SpellCheck;
 
 use base Apache::AxKit::Language;
 use strict;
 
+use AxKit;
 use Apache;
 use Apache::Request;
 use Apache::AxKit::Language;
@@ -12,7 +13,7 @@ use Apache::AxKit::Provider;
 use Text::Aspell;
 use Cwd;
 
-our $VERSION = 0.02;
+our $VERSION = 0.03;
 our $NS = 'http://axkit.org/2004/07/17-spell-check#';
 
 sub stylesheet_exists () { 0; }
@@ -27,6 +28,18 @@ sub handler {
     $spell->set_option('sug-mode', 'fast');
     $spell->set_option('lang', $r->dir_config("AxSpellLanguage") || 'en_US');
     my $max_suggestion = $r->dir_config("AxSpellSuggestions") || 3;
+
+    #
+    # Process the list of elements we need to skip
+    my %skip_elements = ();
+    foreach my $element (split(/\s+/, $r->dir_config("AxSpellSkipElements") )) {
+        if ($element !~ /^(?:\{(.*?)\})?([\w\d\-\_]+)$/) {
+            die "The element \"$element\" is invalid in AxSpellSkipElements";
+        }
+        my $ns   = $1;
+        my $node = $2;
+        $skip_elements{$ns}->{$node} = 1;
+    }
 
     #
     # Load the DOM object
@@ -46,18 +59,27 @@ sub handler {
     #
     # Iterate through all the text nodes
     foreach my $text_node ($root->findnodes('//text()')) {
+
+        #
+        # Skip if our parent is in the exclude list
+        my $parent = $text_node->parentNode;
+        if ($skip_elements{$parent->namespaceURI}->{$parent->localname}) {
+            #warn "Skipping " . $text_node->data . " due to parent " . $parent->nodeName . "\n";
+            next;
+        }
+
         my @nodes = ();
         my $pre_text = undef;
         my $changed = 0;
 
         #
         # Loop through the words in this text ndoe
-        foreach my $word (split(/([a-z0-9\-]+)/i, $text_node->data)) {
+        foreach my $word (split(/\b/, $text_node->data)) {
 
             #
             # Skip empty strings and non-spellable words
             next unless defined $word;
-            unless ($word =~ /[a-z0-9\-]+/i) {
+            unless ($word =~ /^\p{L}+$/i) {
                 $pre_text .= $word;
                 next;
             }
@@ -75,12 +97,12 @@ sub handler {
 
                 #
                 # Add an initial text node if the unspelled word is somewhere in the middle
-                push @nodes, XML::LibXML::Text->new($pre_text) if (scalar($pre_text));
+                push @nodes, XML::LibXML::Text->new($pre_text) if (length($pre_text));
                 $pre_text = undef;
 
                 #
                 # Add the root element for this spelling block
-                my $element = $dom->createElement("sp:incorrect");
+                my $element = $dom->createElementNS($NS, "incorrect");
 
                 #
                 # Iterate and add our suggestions
@@ -89,7 +111,7 @@ sub handler {
                     foreach my $suggestion ($spell->suggest($word)) {
                         #
                         # Add the suggestion element
-                        my $suggest_node = $dom->createElement("sp:suggestion");
+                        my $suggest_node = $dom->createElementNS($NS, "suggestion");
                         $suggest_node->appendText($suggestion);
                         $element->appendChild($suggest_node);
                         last if (++$counter > $max_suggestion);
@@ -98,12 +120,16 @@ sub handler {
 
                 #
                 # Add the element for the current, misspelled word
-                my $word_node = $dom->createElement("sp:word");
+                my $word_node = $dom->createElementNS($NS, "word");
                 $word_node->appendText($word);
                 $element->appendChild($word_node);
                 push @nodes, $element;
             }
         }
+
+        #
+        # Wrap up any text thats left over as a text node
+        push @nodes, XML::LibXML::Text->new($pre_text) if (length($pre_text));
 
         #
         # If nothing's changed, don't bother changing the DOM
@@ -201,6 +227,14 @@ Defaults to "en_US".
 
 Indicates the maximum number of spelling suggestions to return.  This defaults to 3.  If
 set to 0, then no suggestions are ever returned.
+
+=head2 AxSpellSkipElements
+
+  PerlSetVar AxSpellSkipElements "h1 title {http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF"
+
+Informs the spell checking processor to skip any text contained within the specified XML elements.
+If you need to specify a namespace URI for an element, then prefix the element's local name with
+the namespace URI, enclosed in curly-braces "{}".
 
 =head1 BUGS
 
