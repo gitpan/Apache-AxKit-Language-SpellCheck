@@ -1,4 +1,4 @@
-# $Id: SpellCheck.pm,v 1.2 2005/01/20 00:54:00 nachbaur Exp $
+# $Id: SpellCheck.pm,v 1.3 2005/01/20 18:22:54 nachbaur Exp $
 
 package Apache::AxKit::Language::SpellCheck;
 
@@ -12,8 +12,8 @@ use Apache::AxKit::Provider;
 use Text::Aspell;
 use Cwd;
 
-our $VERSION = 0.01;
-our $NS = 'http://nachbaur.com/2004/07/17-spell-check#';
+our $VERSION = 0.02;
+our $NS = 'http://axkit.org/2004/07/17-spell-check#';
 
 sub stylesheet_exists () { 0; }
 
@@ -175,6 +175,33 @@ its text nodes with L<Text::Aspell>.  It injects additional XML elements
 in the document representing which words are incorrectly spelled, and optionally
 offers spelling suggestions.
 
+The XML elements injected into the source document appear similar to the following,
+though without the exta whitespace.
+
+  <sp:incorrect xmlns:sp="http://axkit.org/2004/07/17-spell-check#">
+      <sp:suggestion>CASS</sp:suggestion>
+      <sp:suggestion>CUSS</sp:suggestion>
+      <sp:word>CSS</sp:word>
+  </sp:incorrect>
+
+=head1 OPTIONS
+
+The following options can be used to change the default behavior of this language module:
+
+=head2 AxSpellLanguage
+
+  PerlSetVar AxSpellLanguage fr
+
+Use this directive to change the language you wish to use when checking spelling.
+Defaults to "en_US".
+
+=head2 AxSpellSuggestions
+
+  PerlSetVar AxSpellSuggestions 5
+
+Indicates the maximum number of spelling suggestions to return.  This defaults to 3.  If
+set to 0, then no suggestions are ever returned.
+
 =head1 BUGS
 
 =over 4
@@ -182,6 +209,10 @@ offers spelling suggestions.
 =item *
 
 Doesn't process attribute text
+
+=item *
+
+Has no facility for specifying alternate spelling databases
 
 =back
 
